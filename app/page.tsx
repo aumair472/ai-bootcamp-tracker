@@ -69,6 +69,10 @@ const DEFAULT_SETTINGS: Settings = {
 
 const DEFAULT_STREAK: StreakData = { currentStreak: 0, longestStreak: 0, lastLoggedDate: "" };
 
+const TOTAL_BOOTCAMP_DAYS = 60;
+const STREAK_FIRE_THRESHOLD = 3;
+const SCHEDULE_BUFFER_HOURS = 5;
+
 // --- UTILITY FUNCTIONS ---
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(":").map(Number);
@@ -109,9 +113,10 @@ function computeStreak(sessions: Session[]): StreakData {
   let current = 0;
   let longest = 0;
   let lastLogged = "";
+  // Walk backwards from yesterday, counting consecutive days with logged hours
   const check = new Date();
   check.setDate(check.getDate() - 1);
-  while (current <= 365) {
+  for (let i = 0; i < 365; i++) {
     const ds = toDateStr(check);
     if (ds === today) { check.setDate(check.getDate() - 1); continue; }
     if (datesWithHours.has(ds)) {
@@ -231,22 +236,22 @@ export default function Home() {
   }, [settings.startDate]);
 
   const daysSinceStart = useMemo(() => {
-    const now2 = new Date(); now2.setHours(0, 0, 0, 0);
+    const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
     const start = new Date(startDate); start.setHours(0, 0, 0, 0);
-    return Math.max(0, Math.floor((now2.getTime() - start.getTime()) / 86400000));
+    return Math.max(0, Math.floor((todayMidnight.getTime() - start.getTime()) / 86400000));
   }, [startDate]);
 
-  const daysRemaining = Math.max(0, 60 - daysSinceStart);
+  const daysRemaining = Math.max(0, TOTAL_BOOTCAMP_DAYS - daysSinceStart);
   const remainingHours = Math.max(0, settings.goalHours - totalHours);
   const dailyAvgNeeded = daysRemaining > 0 ? remainingHours / daysRemaining : 0;
-  const expectedHours = (60 - daysRemaining) * (settings.goalHours / 60);
+  const expectedHours = (TOTAL_BOOTCAMP_DAYS - daysRemaining) * (settings.goalHours / TOTAL_BOOTCAMP_DAYS);
   const progressPct = Math.min(100, (totalHours / settings.goalHours) * 100);
 
   const motivationalStatus = useMemo(() => {
-    if (streak.currentStreak >= 3) return `🔥 On fire! ${streak.currentStreak} days streak`;
-    if (totalHours >= expectedHours + 5) return "🏆 Ahead of schedule!";
+    if (streak.currentStreak >= STREAK_FIRE_THRESHOLD) return `🔥 On fire! ${streak.currentStreak} days streak`;
+    if (totalHours >= expectedHours + SCHEDULE_BUFFER_HOURS) return "🏆 Ahead of schedule!";
     if (totalHours >= expectedHours) return "✅ On track — keep going";
-    if (totalHours >= expectedHours - 5) return "⚠️ Slightly behind — log 1 more hour today";
+    if (totalHours >= expectedHours - SCHEDULE_BUFFER_HOURS) return "⚠️ Slightly behind — log 1 more hour today";
     return "🚨 Behind schedule — catch up this weekend";
   }, [streak.currentStreak, totalHours, expectedHours]);
 
@@ -324,7 +329,7 @@ export default function Home() {
 
   const weekCurrent = useMemo(() => {
     const diff = (Date.now() - startDate.getTime()) / 86400000;
-    return Math.min(8, Math.max(1, Math.floor(diff / 7) + 1));
+    return Math.min(WEEK_PLAN.length, Math.max(1, Math.floor(diff / 7) + 1));
   }, [startDate]);
 
   if (!mounted) return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading…</div>;
@@ -638,18 +643,18 @@ export default function Home() {
             <h2 className="text-lg font-bold text-white">⚙️ Settings</h2>
             <div className="space-y-3">
               {([
-                { label: "Your Name", key: "name", type: "text" },
-                { label: "Start Date", key: "startDate", type: "date" },
-                { label: "Goal Hours (total)", key: "goalHours", type: "number" },
-                { label: "Weekday Target (h)", key: "weekdayTarget", type: "number" },
-                { label: "Weekend Target (h)", key: "weekendTarget", type: "number" },
-              ] as { label: string; key: keyof Settings; type: string }[]).map(({ label, key, type }) => (
+                { label: "Your Name", key: "name", type: "text", integer: false },
+                { label: "Start Date", key: "startDate", type: "date", integer: false },
+                { label: "Goal Hours (total)", key: "goalHours", type: "number", integer: true },
+                { label: "Weekday Target (h)", key: "weekdayTarget", type: "number", integer: false },
+                { label: "Weekend Target (h)", key: "weekendTarget", type: "number", integer: false },
+              ] as { label: string; key: keyof Settings; type: string; integer: boolean }[]).map(({ label, key, type, integer }) => (
                 <div key={key}>
                   <label className="text-xs text-gray-400 block mb-1">{label}</label>
                   <input
                     type={type}
                     value={String(settingsDraft[key])}
-                    onChange={(e) => setSettingsDraft({ ...settingsDraft, [key]: type === "number" ? parseFloat(e.target.value) || 0 : e.target.value })}
+                    onChange={(e) => setSettingsDraft({ ...settingsDraft, [key]: type === "number" ? (integer ? parseInt(e.target.value, 10) || 0 : parseFloat(e.target.value) || 0) : e.target.value })}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"
                   />
                 </div>
