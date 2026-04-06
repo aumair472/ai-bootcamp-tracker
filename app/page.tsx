@@ -72,6 +72,7 @@ const DEFAULT_STREAK: StreakData = { currentStreak: 0, longestStreak: 0, lastLog
 const TOTAL_BOOTCAMP_DAYS = 60;
 const STREAK_FIRE_THRESHOLD = 3;
 const SCHEDULE_BUFFER_HOURS = 5;
+const MS_PER_DAY = 86400000;
 
 // --- UTILITY FUNCTIONS ---
 function timeToMinutes(t: string): number {
@@ -113,28 +114,34 @@ function computeStreak(sessions: Session[]): StreakData {
   let current = 0;
   let longest = 0;
   let lastLogged = "";
-  // Walk backwards from yesterday, counting consecutive days with logged hours
+  // Walk backwards from today, counting consecutive days with logged hours.
+  // Include today if hours were already logged today.
   const check = new Date();
-  check.setDate(check.getDate() - 1);
+  check.setHours(0, 0, 0, 0);
   for (let i = 0; i < 365; i++) {
     const ds = toDateStr(check);
-    if (ds === today) { check.setDate(check.getDate() - 1); continue; }
+    // For future dates (shouldn't happen), skip
+    if (ds > today) { check.setTime(check.getTime() - MS_PER_DAY); continue; }
     if (datesWithHours.has(ds)) {
       current++;
       if (!lastLogged) lastLogged = ds;
       if (current > longest) longest = current;
-    } else break;
-    check.setDate(check.getDate() - 1);
+    } else {
+      // Allow today to have 0 hours without breaking the streak
+      if (ds !== today) break;
+    }
+    check.setTime(check.getTime() - MS_PER_DAY);
   }
+  // Compute longest historical streak across all dates
   const sortedDates = Array.from(datesWithHours).sort();
   let streak = 0;
   let maxStreak = 0;
   for (let i = 0; i < sortedDates.length; i++) {
     if (i === 0) { streak = 1; }
     else {
-      const prev = new Date(sortedDates[i - 1] + "T12:00:00");
-      const curr = new Date(sortedDates[i] + "T12:00:00");
-      const diff = (curr.getTime() - prev.getTime()) / 86400000;
+      const prev = new Date(sortedDates[i - 1] + "T00:00:00");
+      const curr = new Date(sortedDates[i] + "T00:00:00");
+      const diff = (curr.getTime() - prev.getTime()) / MS_PER_DAY;
       streak = diff === 1 ? streak + 1 : 1;
     }
     if (streak > maxStreak) maxStreak = streak;
@@ -238,7 +245,7 @@ export default function Home() {
   const daysSinceStart = useMemo(() => {
     const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
     const start = new Date(startDate); start.setHours(0, 0, 0, 0);
-    return Math.max(0, Math.floor((todayMidnight.getTime() - start.getTime()) / 86400000));
+    return Math.max(0, Math.floor((todayMidnight.getTime() - start.getTime()) / MS_PER_DAY));
   }, [startDate]);
 
   const daysRemaining = Math.max(0, TOTAL_BOOTCAMP_DAYS - daysSinceStart);
@@ -328,7 +335,7 @@ export default function Home() {
   const weekDates = useMemo(() => getWeekDates(), []);
 
   const weekCurrent = useMemo(() => {
-    const diff = (Date.now() - startDate.getTime()) / 86400000;
+    const diff = (Date.now() - startDate.getTime()) / MS_PER_DAY;
     return Math.min(WEEK_PLAN.length, Math.max(1, Math.floor(diff / 7) + 1));
   }, [startDate]);
 
@@ -453,7 +460,7 @@ export default function Home() {
               {totalHours >= expectedHours ? (
                 <p className="text-green-300 text-sm font-semibold">✅ Great pace! You have {(totalHours - expectedHours).toFixed(1)}h buffer</p>
               ) : (
-                <p className="text-red-300 text-sm font-semibold">⚠️ Catch up: log {(expectedHours - totalHours).toFixed(1)} more hours today</p>
+                <p className="text-red-300 text-sm font-semibold">⚠️ Behind schedule by {(expectedHours - totalHours).toFixed(1)}h — log more hours to catch up</p>
               )}
             </div>
 
@@ -545,9 +552,10 @@ export default function Home() {
             <div className="grid grid-cols-7 gap-1">
               {weekDates.map((dateStr) => {
                 const dayHours = sessions.filter((s) => s.date === dateStr).reduce((a, s) => a + s.duration_minutes, 0) / 60;
-                const d = new Date(dateStr + "T12:00:00");
+                const d = new Date(dateStr + "T00:00:00");
+                const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
                 const isToday = dateStr === toDateStr(new Date());
-                const isPast = new Date(dateStr + "T23:59:59") < new Date() && !isToday;
+                const isPast = d.getTime() < todayMidnight.getTime();
                 const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                 const target = isWeekend ? settings.weekendTarget : settings.weekdayTarget;
                 const dayName = d.toLocaleDateString("en-US", { weekday: "short" });
